@@ -8,13 +8,16 @@ question answering. Uses HuggingFace Transformers for inference.
 The prompt template follows the paper's Table 5 specification:
   System: "You are a Question Answering system..."
   User:   Context passages + Question
+
+NOTE: Configured for RTX 3080 (10 GB VRAM) — uses 4-bit quantization
+      via bitsandbytes by default.
 """
 
 import logging
 from typing import List
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ class LlamaGenerator:
     """
     Llama 3.1 8B Instruct generator for RAG question answering.
 
-    Loads the model in bfloat16 for efficient GPU inference on RTX 5090.
+    Loads the model in 4-bit quantization (~5 GB VRAM) for RTX 3080.
     Uses the chat template format expected by Llama 3.1 Instruct models.
     """
 
@@ -32,6 +35,7 @@ class LlamaGenerator:
             model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
             device: str = "cuda",
             max_new_tokens: int = 100,
+            load_in_4bit: bool = True,
     ):
         """
         Initialize the Llama generator.
@@ -44,12 +48,17 @@ class LlamaGenerator:
             Device for inference ('cuda' or 'cpu').
         max_new_tokens : int
             Maximum tokens to generate per answer (paper uses 100).
+        load_in_4bit : bool
+            If True, load the model in 4-bit quantization via bitsandbytes
+            to fit within 10 GB VRAM (RTX 3080). Set to False only if you
+            have ≥24 GB VRAM.
         """
         self.device = device
         self.max_new_tokens = max_new_tokens
 
         print(f"[LlamaGenerator] Loading model '{model_name}'...")
         print(f"[LlamaGenerator] Device: {device}")
+        print(f"[LlamaGenerator] 4-bit quantization: {load_in_4bit}")
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -62,12 +71,27 @@ class LlamaGenerator:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        # Load model in bfloat16 for memory-efficient inference
+        # Build model loading kwargs
+        model_kwargs = {
+            "device_map": "auto",
+            "trust_remote_code": True,
+        }
+
+        if load_in_4bit:
+            # 4-bit NF4 quantization — ~5 GB VRAM for 8B model
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+        else:
+            # Full-precision float16 (needs ≥16 GB VRAM)
+            model_kwargs["torch_dtype"] = torch.float16
+
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",  # Automatically places layers on GPU
-            trust_remote_code=True,
+            **model_kwargs,
         )
         self.model.eval()
 
