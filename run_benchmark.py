@@ -42,7 +42,7 @@ from tqdm import tqdm
 # ── Project imports ─────────────────────────────────────────
 from config import (
     EMBEDDING_MODEL_NAME, LLM_MODEL_NAME, DEVICE,
-    LLM_LOAD_IN_4BIT,
+    OLLAMA_BASE_URL,
     TOP_K, MAX_NEW_TOKENS, SYSTEM_PROMPT,
     CHROMA_PERSIST_DIR, RESULTS_DIR,
     GMM_DEFAULTS,
@@ -190,9 +190,8 @@ def main():
     print(f"\n[3/4] Loading LLM: {LLM_MODEL_NAME}")
     generator = LlamaGenerator(
         model_name=LLM_MODEL_NAME,
-        device=DEVICE,
+        ollama_base_url=OLLAMA_BASE_URL,
         max_new_tokens=MAX_NEW_TOKENS,
-        load_in_4bit=LLM_LOAD_IN_4BIT,
     )
 
     # ──────────────────────────────────────────────────────────

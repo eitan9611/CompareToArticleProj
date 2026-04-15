@@ -1,23 +1,23 @@
 """
-generation.py — Llama 3.1 8B Instruct Answer Generator
-======================================================
+generation.py — Llama 3.1 8B Instruct Answer Generator (via Ollama)
+===================================================================
 
-Wraps the locally-hosted Llama 3.1 8B Instruct model for RAG-based
-question answering. Uses HuggingFace Transformers for inference.
+Wraps the locally-hosted Llama 3.1 8B Instruct model via Ollama's
+REST API for RAG-based question answering.
 
 The prompt template follows the paper's Table 5 specification:
   System: "You are a Question Answering system..."
   User:   Context passages + Question
 
-NOTE: Configured for RTX 3080 (10 GB VRAM) — uses 4-bit quantization
-      via bitsandbytes by default.
+NOTE: Requires Ollama running locally (default: http://localhost:11434).
+      Model must be pulled first: `ollama pull llama3.1:8b`
 """
 
+import json
 import logging
 from typing import List
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+import requests
 
 log = logging.getLogger(__name__)
 
@@ -26,76 +26,58 @@ class LlamaGenerator:
     """
     Llama 3.1 8B Instruct generator for RAG question answering.
 
-    Loads the model in 4-bit quantization (~5 GB VRAM) for RTX 3080.
-    Uses the chat template format expected by Llama 3.1 Instruct models.
+    Uses Ollama's local REST API — no HuggingFace token or manual
+    quantization needed. Ollama handles model loading and memory
+    management automatically.
     """
 
     def __init__(
             self,
-            model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
-            device: str = "cuda",
+            model_name: str = "llama3.1:8b",
+            ollama_base_url: str = "http://localhost:11434",
             max_new_tokens: int = 100,
-            load_in_4bit: bool = True,
+            **kwargs,  # Accept and ignore extra kwargs for backward compat
     ):
         """
-        Initialize the Llama generator.
+        Initialize the Llama generator (Ollama backend).
 
         Parameters
         ----------
         model_name : str
-            HuggingFace model ID or local path to the model weights.
-        device : str
-            Device for inference ('cuda' or 'cpu').
+            Ollama model name (e.g., "llama3.1:8b").
+        ollama_base_url : str
+            Base URL for the Ollama API.
         max_new_tokens : int
             Maximum tokens to generate per answer (paper uses 100).
-        load_in_4bit : bool
-            If True, load the model in 4-bit quantization via bitsandbytes
-            to fit within 10 GB VRAM (RTX 3080). Set to False only if you
-            have ≥24 GB VRAM.
         """
-        self.device = device
+        self.model_name = model_name
+        self.base_url = ollama_base_url.rstrip("/")
         self.max_new_tokens = max_new_tokens
 
-        print(f"[LlamaGenerator] Loading model '{model_name}'...")
-        print(f"[LlamaGenerator] Device: {device}")
-        print(f"[LlamaGenerator] 4-bit quantization: {load_in_4bit}")
+        print(f"[LlamaGenerator] Using Ollama backend at {self.base_url}")
+        print(f"[LlamaGenerator] Model: {model_name}")
 
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-        )
-
-        # Ensure pad token is set (Llama doesn't have one by default)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
-        # Build model loading kwargs
-        model_kwargs = {
-            "device_map": "auto",
-            "trust_remote_code": True,
-        }
-
-        if load_in_4bit:
-            # 4-bit NF4 quantization — ~5 GB VRAM for 8B model
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
+        # Verify Ollama is reachable and model is available
+        try:
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            resp.raise_for_status()
+            available = [m["name"] for m in resp.json().get("models", [])]
+            # Check if the model (or a variant) is available
+            model_found = any(
+                model_name in name or name.startswith(model_name.split(":")[0])
+                for name in available
             )
-        else:
-            # Full-precision float16 (needs ≥16 GB VRAM)
-            model_kwargs["torch_dtype"] = torch.float16
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            **model_kwargs,
-        )
-        self.model.eval()
-
-        print(f"[LlamaGenerator] ✓ Model loaded successfully.")
+            if not model_found:
+                print(f"[LlamaGenerator] ⚠ Model '{model_name}' not found in Ollama. "
+                      f"Available: {available}")
+                print(f"[LlamaGenerator]   Run: ollama pull {model_name}")
+            else:
+                print(f"[LlamaGenerator] ✓ Model '{model_name}' is available.")
+        except requests.ConnectionError:
+            print(f"[LlamaGenerator] ⚠ Could not connect to Ollama at {self.base_url}. "
+                  f"Make sure Ollama is running.")
+        except Exception as e:
+            print(f"[LlamaGenerator] ⚠ Error checking Ollama: {e}")
 
     def generate(
             self,
@@ -134,38 +116,34 @@ class LlamaGenerator:
             f"Answer:"
         )
 
-        # ── Format as Llama 3.1 chat messages ─────────────────
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
+        # ── Call Ollama's chat API ─────────────────────────────
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "stream": False,
+            "options": {
+                "num_predict": self.max_new_tokens,
+                "temperature": 0.0,  # Greedy decoding for reproducibility
+            },
+        }
 
-        # Apply the model's chat template
-        input_text = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-        # ── Tokenize and generate ─────────────────────────────
-        inputs = self.tokenizer(
-            input_text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=4096,  # Llama 3.1 supports up to 128k, but we cap input
-        ).to(self.device)
-
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=self.max_new_tokens,
-                do_sample=False,           # Greedy decoding for reproducibility
-                temperature=1.0,
-                pad_token_id=self.tokenizer.pad_token_id,
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=120,
             )
+            resp.raise_for_status()
+            result = resp.json()
+            answer = result.get("message", {}).get("content", "")
+            return answer.strip()
 
-        # ── Extract only the generated tokens (not the prompt) ─
-        generated_ids = outputs[0][inputs["input_ids"].shape[1]:]
-        answer = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
-
-        return answer.strip()
+        except requests.ConnectionError:
+            log.error("Cannot connect to Ollama. Is it running?")
+            return ""
+        except Exception as e:
+            log.error(f"Ollama generation error: {e}")
+            return ""

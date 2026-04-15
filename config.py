@@ -31,13 +31,12 @@ RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
 # This model requires "query: " and "passage: " prefixes for optimal performance.
 EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base"
 
-# LLM — Llama 3.1 8B Instruct (local via HuggingFace Transformers)
-# Loaded in 4-bit quantization (~5 GB) so it fits alongside the embedding model.
-# Change this to a local filesystem path if the model is stored outside HF cache.
-LLM_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-LLM_LOAD_IN_4BIT = True     # Enable 4-bit quantization via bitsandbytes
+# LLM — Llama 3.1 8B Instruct (local via Ollama)
+# Ollama handles quantization and memory management automatically.
+LLM_MODEL_NAME = "llama3.1:8b"
+OLLAMA_BASE_URL = "http://localhost:11434"
 
-# Device for inference
+# Device for embedding model inference
 DEVICE = "cuda"
 
 # ──────────────────────────────────────────────────────────────
