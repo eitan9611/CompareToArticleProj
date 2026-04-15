@@ -24,19 +24,18 @@ CHROMA_PERSIST_DIR = os.path.join(PROJECT_ROOT, "chroma_db")
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
 
 # ──────────────────────────────────────────────────────────────
-# Model Configuration  (tuned for RTX 3080 — 10 GB VRAM)
+# Model Configuration
 # ──────────────────────────────────────────────────────────────
-# Embedding model — intfloat/multilingual-e5-base (local via SentenceTransformers)
-# Switched from e5-large (~1.2 GB) to e5-base (~440 MB) to save VRAM.
+# Embedding model — intfloat/multilingual-e5-large (local via SentenceTransformers)
 # This model requires "query: " and "passage: " prefixes for optimal performance.
-EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base"
+EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large"
 
 # LLM — Llama 3.1 8B Instruct (local via Ollama)
 # Ollama handles quantization and memory management automatically.
 LLM_MODEL_NAME = "llama3.1:8b"
 OLLAMA_BASE_URL = "http://localhost:11434"
 
-# Device for embedding model inference
+# Device for inference
 DEVICE = "cuda"
 
 # ──────────────────────────────────────────────────────────────
