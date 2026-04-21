@@ -57,8 +57,8 @@ class Gmm_Chunker(ChunkingStrategy):
 
             # Windowing
             max_gap_threshold: int = 1,
-            semantic_gap_threshold: float = 0.75,
-            window_expansion_k: int = 1,
+            semantic_gap_threshold: float = 0.85,
+            window_expansion_k: int = 2,
 
             # Chunk size safety
             max_sentences_per_chunk: int = 12,
