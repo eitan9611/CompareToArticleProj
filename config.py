@@ -15,6 +15,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # ──────────────────────────────────────────────────────────────
 # Paths
@@ -32,7 +35,7 @@ EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large"
 
 # LLM — Llama 3.1 8B Instruct (local via Ollama)
 # Ollama handles quantization and memory management automatically.
-LLM_MODEL_NAME = "llama3.1:8b"
+LLM_MODEL_NAME = "llama3.1:latest"
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 # Device for inference
